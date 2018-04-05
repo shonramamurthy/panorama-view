@@ -20,11 +20,10 @@ https://addons.mozilla.org/en-US/firefox/addon/panorama-view/
 - Drag and drop tabs and groups between windows (maybe)
 
 ### Waiting for API
-- Import/restore backup
+- Import/restore backup (basic implementation added, discarded option in tabs.create() or a proper sessionStore API is prefered)
 
-### Impossible
-- Properly open backup urls (maybe)
+### Impossible (for now)
+- Open privileged URLs from backups
 
 ## Known bugs
-- Attached tab isn't added
-- Detached tab not always removed
+- Detached tab not always removed from the Panorama View, a refresh solves it.

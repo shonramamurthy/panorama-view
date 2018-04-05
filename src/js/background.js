@@ -10,6 +10,7 @@
 };*/
 
 var openingView = false;
+var openingBackup = false;
 
 async function triggerCommand(command) {
 	if (command === "activate-next-group") {
@@ -66,35 +67,47 @@ async function toggleView() {
 
 /** Callback function which will be called whenever a tab is opened */
 async function tabCreated(tab) {
-	if(!openingView) {
-		// Normal case: everything except the Panorama View tab
-		// If the tab does not have a group, set its group to the current group
-		var tabGroupId = await browser.sessions.getTabValue(tab.id, 'groupId');
+	if(!openingBackup) {
+		if(!openingView) {
+			// Normal case: everything except the Panorama View tab
+			// If the tab does not have a group, set its group to the current group
+			var tabGroupId = await browser.sessions.getTabValue(tab.id, 'groupId');
 
-		if(tabGroupId === undefined) {
+			if(tabGroupId === undefined) {
 
-			var activeGroup = undefined;
+				var activeGroup = undefined;
 
-			while(activeGroup === undefined) {
-				activeGroup = (await browser.sessions.getWindowValue(tab.windowId, 'activeGroup'));
+				while(activeGroup === undefined) {
+					activeGroup = (await browser.sessions.getWindowValue(tab.windowId, 'activeGroup'));
+				}
+
+				browser.sessions.setTabValue(tab.id, 'groupId', activeGroup);
 			}
-
-			browser.sessions.setTabValue(tab.id, 'groupId', activeGroup);
+		}else{
+			// Opening the Panorama View tab
+			// Make sure it's in the special group
+			openingView = false;
+			browser.sessions.setTabValue(tab.id, 'groupId', -1);
 		}
-	}else{
-		// Opening the Panorama View tab
-		// Make sure it's in the special group
-		openingView = false;
-		browser.sessions.setTabValue(tab.id, 'groupId', -1);
 	}
 }
+
+async function tabAttached(tabId, attachInfo) {
+	var tab = await browser.tabs.get(tabId);
+	tabCreated(tab);
+}
+
+function tabDetached(tabId, detachInfo) {
+	browser.sessions.removeTabValue(tabId, 'groupId');
+}
+
 
 /** Callback function which will be called whenever the user switches tabs */
 async function tabActivated(activeInfo) {
 
-	var tabData = await browser.tabs.get(activeInfo.tabId);
+	var tab = await browser.tabs.get(activeInfo.tabId);
 
-	if(!tabData.pinned) {
+	if(!tab.pinned) {
 
 		// Set the window's active group to the new active tab's group
 		// If this is a newly-created tab, tabCreated() might not have set a
@@ -105,8 +118,7 @@ async function tabActivated(activeInfo) {
 		}
 
 		if(activeGroup != -1) {
-			const windowId = (await browser.windows.getCurrent()).id;
-			await browser.sessions.setWindowValue(windowId, 'activeGroup', activeGroup);
+			await browser.sessions.setWindowValue(tab.windowId, 'activeGroup', activeGroup);
 		}
 
 		await toggleVisibleTabs(activeGroup);
@@ -177,25 +189,28 @@ async function newGroupUid(windowId) {
  * that do not yet have a group */
 async function createGroupInWindow(window) {
 
-	var currentGroups = await browser.sessions.getWindowValue(window.id, 'groups');
+	if(!openingBackup) {
 
-	if(!currentGroups) {
+		var currentGroups = await browser.sessions.getWindowValue(window.id, 'groups');
 
-		var groupId = await newGroupUid(window.id);
+		if(!currentGroups) {
 
-		var groups = [{
-			id: groupId,
-			name: 'Unnamed Group',
-			containerId: 'firefox-default',
-			rect: {x: 0, y: 0, w: 0.25, h: 0.5},
-			tabCount: 0,
-		}];
+			var groupId = await newGroupUid(window.id);
+
+			var groups = [{
+				id: groupId,
+				name: 'Unnamed Group',
+				containerId: 'firefox-default',
+				rect: {x: 0, y: 0, w: 0.25, h: 0.5},
+				tabCount: 0,
+			}];
 
 
-		browser.sessions.setWindowValue(window.id, 'groups', groups);
-		browser.sessions.setWindowValue(window.id, 'activeGroup', groupId);
+			browser.sessions.setWindowValue(window.id, 'groups', groups);
+			browser.sessions.setWindowValue(window.id, 'activeGroup', groupId);
 
-		const tabs = browser.tabs.query({windowId: window.id});
+			//const tabs = browser.tabs.query({windowId: window.id}); // why is this here..?
+		}
 	}
 }
 
@@ -240,6 +255,8 @@ async function init() {
 	browser.browserAction.onClicked.addListener(toggleView);
 	browser.windows.onCreated.addListener(createGroupInWindow);
 	browser.tabs.onCreated.addListener(tabCreated);
+	browser.tabs.onAttached.addListener(tabAttached);
+	browser.tabs.onDetached.addListener(tabDetached);
 	browser.tabs.onActivated.addListener(tabActivated);
 }
 
